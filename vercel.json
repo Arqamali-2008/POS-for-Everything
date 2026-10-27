@@ -4,22 +4,13 @@
     "backend": {
       "root": "packages/backend",
       "framework": "express",
-      "buildCommand": "npm run build",
-      "installCommand": "npm install --workspaces"
+      "buildCommand": "npm run build"
     },
     "frontend": {
       "root": "packages/frontend",
       "framework": "vite",
       "buildCommand": "npm run build",
-      "outputDirectory": "packages/frontend/dist",
-      "bindings": [
-        {
-          "type": "service",
-          "service": "backend",
-          "format": "url",
-          "env": "BACKEND_URL"
-        }
-      ]
+      "outputDirectory": "packages/frontend/dist"
     }
   },
   "rewrites": [
