@@ -9,12 +9,12 @@ import { useAuthStore } from '../stores/authStore';
  * ---------
  * `local` (default): every business record is stored in the browser's
  * localStorage and no backend is required.
- * `api`: use the Express backend (`BACKEND_URL`) instead.
+ * `api`: use the Express backend (`VITE_API_URL`) instead.
  */
 export const dataMode = (import.meta.env.VITE_DATA_MODE || 'local').toLowerCase();
 export const isLocalStorageMode = dataMode !== 'api';
 
-const API_BASE_URL = process.env.BACKEND_URL || '/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 const AUTH_STORAGE_KEY = 'ami-pos-auth';
 
 const api: AxiosInstance = axios.create({
