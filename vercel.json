@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "npm install --workspaces",
+  "monoRepo": true,
   "services": {
     "backend": {
       "root": "packages/backend",
