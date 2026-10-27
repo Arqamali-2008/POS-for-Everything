@@ -1,6 +1,8 @@
 # POS for Everything v2.0 - Modern Point of Sale System
 
-A full-stack, offline-first Point of Sale system built with TypeScript, React, Node.js, and multi-database support (SQLite, Supabase, Turso, Azure SQL).
+A full-stack, offline-first Point of sale system built with TypeScript, React, Node.js, and multi-database support (SQLite, Supabase, Turso, Azure SQL).
+
+![POS for Everything Banner](https://images.unsplash.com/photo-1531239080096-e2bb6a9e1f1e?ixlib=rb-4.0.3&auto=format&fit=crop&w=1200&q=80)
 
 ## 🚀 Features
 
@@ -21,22 +23,9 @@ A full-stack, offline-first Point of Sale system built with TypeScript, React, N
 - **Type-Safe** - End-to-end TypeScript with Zod validation
 - **Modern Stack** - React 18, Node.js, Express, Drizzle ORM, TanStack Query
 - **Monorepo** - Turborepo with shared packages
+- **Cloudflare Pages** - Static frontend deployment
 
-## 📁 Project Structure
-
-```
-pospro-v2/
-├── packages/
-│   ├── core/           # Shared types, schemas, constants, utilities
-│   ├── database/       # Database abstraction layer with multi-provider support
-│   ├── backend/        # Node.js/Express API server
-│   └── frontend/       # React 18 + Vite + Tailwind CSS
-├── docker-compose.yml  # Docker deployment
-├── turbo.json          # Turborepo configuration
-└── package.json        # Root workspace
-```
-
-## 🛠 Quick Start
+## 🚦 Quick Start
 
 ### Prerequisites
 - Node.js 20+ (tested on Node 26)
@@ -57,8 +46,7 @@ This starts:
 
 ### Run with NO database (browser localStorage only)
 
-The frontend ships with a **localStorage data layer** that needs neither a backend nor a
-database. It is the default (`VITE_DATA_MODE=local`).
+The frontend ships with a **localStorage data layer** that needs neither a backend nor a database. It is the default (`VITE_DATA_MODE=local`).
 
 ```cmd
 cd /d E:\Projects\POS\pospro-v2
@@ -145,7 +133,101 @@ docker-compose down
 2. Generate secure `JWT_SECRET` (32+ characters)
 3. Configure your database provider
 4. Set `FRONTEND_URL` to your domain
-5. Run `docker-compose -f docker-compose.yml up -d`
+5. **Cloudflare Pages**: Push to GitHub → auto-deploys
+6. **Or Docker**: `docker-compose -f docker-compose.yml up -d`
+
+### Cloudflare Pages Deployment
+
+This project is configured for Cloudflare Pages static frontend deployment:
+
+1. Connect your GitHub repository to Cloudflare Pages
+2. Framework: **Vite**
+3. Build command: `npm run build`
+4. Build output: `packages/frontend/dist`
+5. On each Git push, Cloudflare automatically builds and deploys the frontend
+6. No `wrangler deploy` needed — this is a Pages deployment, not Workers
+
+The `wrangler.jsonc` at the repository root configures Cloudflare asset deployment:
+```json
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pos-for-everything",
+  "compatibility_date": "2026-11-01",
+  "assets": {
+    "directory": "./packages/frontend/dist"
+  }
+}
+```
+
+## 📁 Project Structure
+
+```
+pospro-v2/
+├ packages/
+│   ├── core/           # Shared types, schemas, constants, utilities
+│   ├── database/       # Database abstraction layer with multi-provider support
+│   ├── backend/        # Node.js/Express API server
+│   └── frontend/       # React 18 + Vite + Tailwind CSS
+├ docker-compose.yml    # Docker deployment
+├ turbo.json            # Turborepo configuration
+├ package.json          # Root workspace
+└ wrangler.jsonc       # Cloudflare configuration
+```
+
+## 🛠 Quick Start
+
+### Prerequisites
+- Node.js 20+ (tested on Node 26)
+- npm 10+
+
+### Development Setup (Windows `cmd`)
+
+```cmd
+cd /d E:\Projects\POS\pospro-v2
+npm install
+npm run dev
+```
+
+This starts:
+- Backend API: http://localhost:3000
+- Frontend: http://localhost:5173
+
+### Run with NO database (browser localStorage only)
+
+The frontend ships with a **localStorage data layer** that needs neither a backend nor a database. It is the default (`VITE_DATA_MODE=local`).
+
+```cmd
+cd /d E:\Projects\POS\pospro-v2
+npm install
+npm run dev:frontend
+```
+
+Then open **http://localhost:5173** and sign in with:
+
+| Role | Email | Password |
+|------|-------|----------|
+| Admin | admin@pos.com | admin123 |
+
+Everything (products, categories, customers, suppliers, sales, purchases, expenses,
+cheques, loans, inventory, employees, settings) is stored in the browser under the
+`ami-pos:data:*` keys, so the data survives a refresh and stays on the machine.
+
+Production build of the same localStorage app:
+
+```cmd
+cd /d E:\Projects\POS\pospro-v2
+npm run build
+npm run preview --workspace=@pospro/frontend
+```
+
+### Production Deployment
+
+1. Set `NODE_ENV=production` in environment
+2. Generate secure `JWT_SECRET` (32+ characters)
+3. Configure your database provider
+4. Set `FRONTEND_URL` to your domain
+5. **Cloudflare Pages**: Push to GitHub → auto-deploys
+6. **Docker**: `docker-compose -f docker-compose.yml up -d`
 
 ## 📦 Available Scripts
 
@@ -183,7 +265,6 @@ The `@pospro/database` package provides a unified interface for all database pro
 
 ```typescript
 import { createDatabaseProvider } from '@pospro/database';
-
 const db = await createDatabaseProvider('sqlite', { sqlitePath: './data/pos.db' });
 const users = await db.findMany('users', { filters: [{ field: 'isActive', operator: 'eq', value: true }] });
 ```
@@ -194,7 +275,6 @@ The `@pospro/core` package provides TypeScript types and Zod schemas:
 
 ```typescript
 import { Product, productSchema } from '@pospro/core';
-
 const product = productSchema.parse(rawData);
 ```
 
@@ -262,9 +342,9 @@ MIT License - see LICENSE file for details.
 
 ## 🆘 Support
 
-- Documentation: [Wiki](https://github.com/your-org/pospro-v2/wiki)
-- Issues: [GitHub Issues](https://github.com/your-org/pospro-v2/issues)
-- Discussions: [GitHub Discussions](https://github.com/your-org/pospro-v2/discussions)
+- Documentation: [Wiki](https://github.com/Arqamali-2008/POS-for-Everything/wiki)
+- Issues: [GitHub Issues](https://github.com/Arqamali-2008/POS-for-Everything/issues)
+- Discussions: [GitHub Discussions](https://github.com/Arqamali-2008/POS-for-Everything/discussions)
 
 ---
 
