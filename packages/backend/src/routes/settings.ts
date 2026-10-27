@@ -4,12 +4,18 @@
  */
 
 import { Router, Request, Response } from 'express';
+import { z } from 'zod';
 import { authenticateToken, requireAdmin, validateBody } from '../middleware/auth';
 import { logger } from '../services/logger';
 import { lazyDatabaseProvider } from '../db/connection';
 
 const router = Router();
 const db = lazyDatabaseProvider();
+
+const singleSettingSchema = z.object({
+  key: z.string().min(1),
+  value: z.unknown(),
+});
 
 function parseSettingValue(raw: unknown): unknown {
   if (typeof raw === 'string') {
@@ -59,7 +65,7 @@ router.get('/', authenticateToken, async (_req: Request, res: Response) => {
   }
 });
 
-router.put('/', authenticateToken, requireAdmin, validateBody({ key: 'key', value: 'value' } as any), async (req: Request, res: Response) => {
+router.put('/', authenticateToken, requireAdmin, validateBody(singleSettingSchema as never), async (req: Request, res: Response) => {
   try {
     const { key, value } = req.body as { key: string; value: unknown };
     const existing = await db.findMany<any>('settings', {

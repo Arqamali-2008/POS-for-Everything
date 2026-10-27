@@ -1,4 +1,4 @@
-# Session Summary — pospro-v2 (saved Oct 26, 2026)
+# Session Summary — pospro-v2 → **POS for Everything** (saved Oct 27, 2026)
 
 ## Objective
 - Complete/port all features from the original vanilla-JS POS at `E:\Projects\POS\pospro` into `E:\Projects\POS\pospro-v2`, fix broken features/errors, and finish undone work.
@@ -61,6 +61,24 @@
   - Discovery: ALL snake_case usage in routes is inside raw SQL strings only (rawExecute) — no snake_case property accesses, so camelize-on-read is safe. Stats raw-SQL aliases (`total_revenue` etc.) are camelized by the res.json middleware.
   - `@pospro/database` + `@pospro/backend` typecheck both PASS after these changes.
 - **TODO (remaining)**: `routes/database.ts` + runtime-config + wire into routes/index.ts; backend build + live smoke (login, product camelCase roundtrip, path switch, settings parse); frontend api.ts database service + SettingsPage "Data File" section; network setup docs.
+
+### Completed (Oct 27, 2026 — shared-.db feature FINISHED)
+- **routes/database.ts, db/runtime-config.ts, wiring** were already present and typechecked. Verified live.
+- **Frontend**: `packages/frontend/src/services/api.ts` — new `remoteClient.database` service (info/testPath/switchPath/backup) + exported typed `databaseApi` (`null` in local mode).
+- **SettingsPage.tsx** — Database section now shows a **"Data File"** panel in API mode only: current path + network-path/file-exists badges, size, journal mode, runtime-override note; path Input with Test / Switch (live reconnect, rollback on failure) / Backup Now; explanatory text. Local mode shows a note instead.
+- **Backend bug fixed during smoke**: `routes/settings.ts` PUT passed a plain object to `validateBody` → `schema.safeParse is not a function` (500 INTERNAL_ERROR). Now validates with a real zod schema (`singleSettingSchema` = `{ key: string, value: unknown }`).
+- **Live smoke (all PASS)**: login (admin@pos.com, role admin); product create/update/read/delete with full camelCase↔snake_case roundtrip (`itemCode`, `costPrice`, `sellingPrice`, `stock`); `/api/database/test` good + bad path (unc-creatable folder rejected); `/api/database` info (path/journal=WAL/size); switch same-path, switch to new path (creates `pos2.db` + schema), switch back; `/api/database/backup` (WAL checkpoint + copy, ~586KB); GET settings parses typed values (taxRate → number); PUT settings + GET reflect 12.5 correctly.
+- **Frontend verification**: `npm run test:local` 34/34; typecheck 6/6; build 4/4.
+- **Docs**: NEW `NETWORK_SETUP.md` — server-PC architecture, build/start steps, share path + runtime switch via Settings → Database → Data File, env table, firewall rule, safety notes (WAL on SMB, one-server rule, runtime-config reset).
+- **GitHub**: repo is now public: https://github.com/Arqamali-2008/POS-for-Everything (initial push; .gitignore excludes .env, *.db/-wal/-shm, `packages/backend/data/`, Seesion/ + session-ses_*.md artifacts).
+- **Rebrand**: "AMi POS" → **"POS for Everything"** in frontend index.html (title+meta), LoginPage, Layout, print fallbacks, settings defaults (localStorageClient default shopName), backend server banner/routes version/websocket message/README. Internal storage keys (`ami-pos:*`) and package names (@pospro/*) intentionally unchanged for data compatibility. Existing DB shopName rows are NOT overwritten (correct behavior).
+- Smoke artifacts cleaned (pos2.db, backup copies removed; runtime-config.json remains pointing at the default absolute pos.db path — safe).
+
+## Next Move (Oct 27)
+1. Remaining optional: raise remaining `limit: 500` list calls to 2000; add refund-clamp/oversell checks to `scripts/smoke-local.mjs`.
+2. `/api/database` route path check — route mounted at `/database` with `router.get('/')`; switch-back leaves `runtime-config.json` pinned to absolute default path (delete file or leave, both fine).
+3. errors.md items 11/12 remain intentionally (features, not bugs).
+4. Git initialized + pushed; keep pushing after future changes (user request).
 
 ### Blocked / Deferred
 - API mode (`VITE_DATA_MODE=api`) unreliable until camelCase↔snake_case mapping fixed in `sqlite-provider.ts` — intentionally deferred; local mode is default.
