@@ -1,0 +1,37 @@
+{
+  "name": "pos-for-everything",
+  "version": "2.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "turbo run dev",
+    "dev:frontend": "npm run dev --workspace=@pospro/frontend",
+    "dev:backend": "npm run dev --workspace=@pospro/backend",
+    "build": "turbo run build",
+    "build:backend": "turbo run build --filter=@pospro/backend",
+    "build:frontend": "turbo run build --filter=@pospro/frontend",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "turbo run db:generate --filter=@pospro/database",
+    "db:migrate": "turbo run db:migrate --filter=@pospro/backend",
+    "db:push": "turbo run db:push --filter=@pospro/backend",
+    "db:studio": "turbo run db:studio --filter=@pospro/database",
+    "test": "turbo run test",
+    "clean": "turbo run clean && node -e \"require('fs').rmSync('node_modules',{recursive:true,force:true});require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\""
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.5.0",
+    "prettier": "^3.3.0",
+    "eslint": "^9.0.0",
+    "@types/node": "^24.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "npm@10.8.0"
+}

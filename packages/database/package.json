@@ -1,0 +1,46 @@
+{
+  "name": "@pospro/database",
+  "version": "2.0.0",
+  "private": true,
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./providers/*": {
+      "types": "./dist/providers/*.d.ts",
+      "import": "./dist/providers/*.mjs",
+      "require": "./dist/providers/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc -w",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.32.0",
+    "@libsql/client": "^0.14.0",
+    "@supabase/supabase-js": "^2.45.0",
+    "postgres": "^3.4.5",
+    "mssql": "^11.0.0",
+    "dotenv": "^16.4.0",
+    "@pospro/core": "file:../core"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0",
+    "drizzle-kit": "^0.24.0",
+    "@types/node": "^24.0.0",
+    "@types/mssql": "^9.1.0"
+  }
+}

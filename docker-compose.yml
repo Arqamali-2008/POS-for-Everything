@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # Backend API Server
+  backend:
+    build:
+      context: .
+      dockerfile: packages/backend/Dockerfile
+    ports:
+      - "3000:3000"
+      - "3001:3001"  # WebSocket
+    environment:
+      - NODE_ENV=production
+      - DB_PROVIDER=${DB_PROVIDER:-sqlite}
+      - SQLITE_DB_PATH=/data/pos.db
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_ANON_KEY=${SUPABASE_ANON_KEY}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - TURSO_DATABASE_URL=${TURSO_DATABASE_URL}
+      - TURSO_AUTH_TOKEN=${TURSO_AUTH_TOKEN}
+      - AZURE_SQL_SERVER=${AZURE_SQL_SERVER}
+      - AZURE_SQL_DATABASE=${AZURE_SQL_DATABASE}
+      - AZURE_SQL_USER=${AZURE_SQL_USER}
+      - AZURE_SQL_PASSWORD=${AZURE_SQL_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - FRONTEND_URL=${FRONTEND_URL}
+    volumes:
+      - pos-data:/data
+      - ./packages/backend:/app/packages/backend
+      - ./packages/core:/app/packages/core
+      - ./packages/database:/app/packages/database
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - redis
+
+  # Frontend (served by backend in production, separate in dev)
+  frontend:
+    build:
+      context: .
+      dockerfile: packages/frontend/Dockerfile
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://backend:3000/api
+      - VITE_WS_URL=ws://backend:3000
+    volumes:
+      - ./packages/frontend:/app/packages/frontend
+      - ./packages/core:/app/packages/core
+    depends_on:
+      - backend
+
+  # Redis for session storage and caching
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # SQLite database (for SQLite provider)
+  # Note: SQLite is file-based, no separate container needed
+  # This is just a placeholder for other database options
+
+volumes:
+  pos-data:
+  redis-data:
+
+networks:
+  default:
+    name: pos-network
