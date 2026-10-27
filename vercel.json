@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm install --workspaces",
   "services": {
     "backend": {
       "root": "packages/backend",
