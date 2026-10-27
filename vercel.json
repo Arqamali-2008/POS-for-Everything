@@ -10,7 +10,15 @@
       "root": "packages/frontend",
       "framework": "vite",
       "buildCommand": "npm run build",
-      "outputDirectory": "packages/frontend/dist"
+      "outputDirectory": "packages/frontend/dist",
+      "bindings": [
+        {
+          "type": "service",
+          "service": "backend",
+          "format": "url",
+          "env": "BACKEND_URL"
+        }
+      ]
     }
   },
   "rewrites": [
@@ -25,14 +33,6 @@
       "destination": {
         "service": "frontend"
       }
-    }
-  ],
-  "bindings": [
-    {
-      "type": "service",
-      "service": "backend",
-      "format": "url",
-      "env": "BACKEND_URL"
     }
   ]
 }
