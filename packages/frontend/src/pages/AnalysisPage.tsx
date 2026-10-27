@@ -61,7 +61,7 @@ export function AnalysisPage() {
         dateFrom: effectiveRange.from || undefined,
         dateTo: effectiveRange.to || undefined,
         limit: 2000,
-        sortBy: 'date',
+        sortBy: 'createdAt',
         sortOrder: 'desc' as const,
       }),
   });
@@ -81,7 +81,7 @@ export function AnalysisPage() {
   const employees = employeesData?.data ?? [];
 
   const completedSales = useMemo(
-    () => sales.filter((sale: any) => !['Cancelled', 'Refunded', 'Held', 'Unpaid'].includes(String(sale.status))),
+    () => sales.filter((sale: any) => !['Cancelled', 'Refunded', 'Held', 'Unpaid', 'Pending', 'Partial', 'Partially Refunded'].includes(String(sale.status))),
     [sales],
   );
 
@@ -216,7 +216,7 @@ export function AnalysisPage() {
     for (const sale of completedSales) {
       const date = new Date(sale.date || sale.createdAt);
       const label = days[(date.getDay() + 6) % 7];
-      totalsByDay.set(label, (totalsByDay.get(label) ?? 0) + Number(sale.total || 0));
+      totalsByDay.set(label, (totalsByDay.get(label) ?? 0) + Math.max(0, Number(sale.grandTotal || 0) - Number(sale.refundAmount || 0)));
     }
     return days.map((label) => ({ label, value: totalsByDay.get(label) ?? 0 }));
   }, [completedSales]);

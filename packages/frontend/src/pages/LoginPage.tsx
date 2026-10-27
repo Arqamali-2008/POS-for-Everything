@@ -145,6 +145,9 @@ export function LoginPage() {
         <p className="text-center text-xs text-secondary-400 mt-6">
           POS for Everything v2.0.0
         </p>
+        <p className="text-center text-[11px] text-secondary-400 mt-1">
+          Designed and Developed By AMi
+        </p>
       </div>
     </div>
   );

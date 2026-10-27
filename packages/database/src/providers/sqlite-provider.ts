@@ -665,6 +665,7 @@ export class SQLiteProvider implements DatabaseProviderInterface {
         amount_paid REAL NOT NULL DEFAULT 0,
         change_due REAL NOT NULL DEFAULT 0,
         balance_due REAL NOT NULL DEFAULT 0,
+        refund_amount REAL NOT NULL DEFAULT 0,
         item_count INTEGER NOT NULL DEFAULT 0,
         total_quantity REAL NOT NULL DEFAULT 0,
         note TEXT,
@@ -1118,10 +1119,22 @@ export class SQLiteProvider implements DatabaseProviderInterface {
     for (const tableSql of tables) {
       db.exec(tableSql);
     }
-    
+
+    // Lightweight column migrations for existing databases
+    const columnMigrations: Array<{ table: string; sql: string }> = [
+      { table: 'sales', sql: 'ALTER TABLE sales ADD COLUMN refund_amount REAL NOT NULL DEFAULT 0' },
+    ];
+    for (const migration of columnMigrations) {
+      try {
+        db.exec(migration.sql);
+      } catch {
+        // Column already exists
+      }
+    }
+
     // Insert default settings
     const defaultSettings = [
-      { key: 'shopName', value: '"AMi POS"', type: 'string', category: 'general', label: 'Shop Name', isPublic: 1, defaultValue: '"AMi POS"' },
+      { key: 'shopName', value: '"POS for Everything"', type: 'string', category: 'general', label: 'Shop Name', isPublic: 1, defaultValue: '"POS for Everything"' },
       { key: 'currency', value: '"LKR"', type: 'string', category: 'general', label: 'Currency', isPublic: 1, defaultValue: '"LKR"' },
       { key: 'currencySymbol', value: '"Rs."', type: 'string', category: 'general', label: 'Currency Symbol', isPublic: 1, defaultValue: '"Rs."' },
       { key: 'taxRate', value: '0', type: 'number', category: 'tax', label: 'Tax Rate %', isPublic: 1, defaultValue: '0' },
@@ -1236,10 +1249,16 @@ export class SQLiteProvider implements DatabaseProviderInterface {
 
   private buildOrderBy(sorts: SortOption[] = [], table?: string): string {
     if (sorts.length === 0) return '';
-    return `ORDER BY ${sorts.map(s => {
-      const field = table ? this.toColumnOrKeep(table, s.field) : s.field;
-      return `${field} ${s.order.toUpperCase()}`;
-    }).join(', ')}`;
+    const parts: string[] = [];
+    for (const s of sorts) {
+      if (!s || typeof s.field !== 'string' || !s.field.trim()) continue;
+      // Order-by fields are interpolated into SQL, so only real table columns
+      // (identifier-shaped) may pass — rejects injection via ?sortBy=.
+      const column = table ? this.toColumn(table, s.field) : s.field;
+      if (!column || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(column)) continue;
+      parts.push(`${column} ${s.order === 'desc' ? 'DESC' : 'ASC'}`);
+    }
+    return parts.length > 0 ? `ORDER BY ${parts.join(', ')}` : '';
   }
 
   private buildLimitOffset(limit?: number, offset?: number): string {
@@ -1302,20 +1321,36 @@ export class SQLiteProvider implements DatabaseProviderInterface {
   private async runCreate<T = any>(conn: DatabaseConnection, table: string, data: Record<string, any> & { id?: string }): Promise<T> {
     const id = data.id || uuidv4();
     const now = new Date().toISOString();
-    
+
     const mapped = this.mapForWrite(table, data);
-    const createdAt = mapped.created_at !== undefined ? mapped.created_at : now;
-    const updatedAt = mapped.updated_at !== undefined ? mapped.updated_at : now;
+    delete mapped.id;
+    const providedCreatedAt = mapped.created_at;
+    const providedUpdatedAt = mapped.updated_at;
     delete mapped.created_at;
     delete mapped.updated_at;
-    
-    const fields = ['id', 'created_at', 'updated_at', ...Object.keys(mapped)];
-    const values = [id, createdAt, updatedAt, ...Object.values(mapped)];
+
+    const columns = this.getColumns(table);
+    const hasColumn = (name: string): boolean => (columns ? columns.columns.has(name) : true);
+
+    const fields = ['id'];
+    const values: unknown[] = [id];
+    if (hasColumn('created_at')) {
+      fields.push('created_at');
+      values.push(providedCreatedAt !== undefined ? providedCreatedAt : now);
+    }
+    if (hasColumn('updated_at')) {
+      fields.push('updated_at');
+      values.push(providedUpdatedAt !== undefined ? providedUpdatedAt : now);
+    }
+    for (const [key, value] of Object.entries(mapped)) {
+      fields.push(key);
+      values.push(value);
+    }
     const placeholders = fields.map(() => '?').join(', ');
-    
+
     const sql = `INSERT INTO ${table} (${fields.join(', ')}) VALUES (${placeholders})`;
     await conn.execute(sql, values);
-    
+
     return this.runFindById<T>(conn, table, id) as Promise<T>;
   }
 
@@ -1332,13 +1367,23 @@ export class SQLiteProvider implements DatabaseProviderInterface {
       data.forEach((item, index) => {
         const id = item.id || uuidv4();
         const mapped = this.mapForWrite(table, item);
-        const createdAt = mapped.created_at !== undefined ? mapped.created_at : now;
-        const updatedAt = mapped.updated_at !== undefined ? mapped.updated_at : now;
+        delete mapped.id;
+        const providedCreatedAt = mapped.created_at;
+        const providedUpdatedAt = mapped.updated_at;
         delete mapped.created_at;
         delete mapped.updated_at;
-        
-        const fields = ['id', 'created_at', 'updated_at', ...Object.keys(mapped)];
-        const values = [id, createdAt, updatedAt, ...Object.values(mapped)];
+
+        const columns = this.getColumns(table);
+        const hasColumn = (name: string): boolean => (columns ? columns.columns.has(name) : true);
+
+        const createdAtValue = providedCreatedAt !== undefined ? providedCreatedAt : now;
+        const updatedAtValue = providedUpdatedAt !== undefined ? providedUpdatedAt : now;
+        const includeCreatedAt = hasColumn('created_at');
+        const includeUpdatedAt = hasColumn('updated_at');
+
+        const fieldNames = Object.keys(mapped);
+        const fields = ['id', ...(includeCreatedAt ? ['created_at'] : []), ...(includeUpdatedAt ? ['updated_at'] : []), ...fieldNames];
+        const values = [id, ...(includeCreatedAt ? [createdAtValue] : []), ...(includeUpdatedAt ? [updatedAtValue] : []), ...Object.values(mapped)];
         
         if (!prepared || prepared.fields.join(',') !== fields.join(',')) {
           const placeholders = fields.map(() => '?').join(', ');
@@ -1346,7 +1391,7 @@ export class SQLiteProvider implements DatabaseProviderInterface {
         }
         prepared.stmt.run(...values);
         
-        results.push({ ...item, id, created_at: createdAt, updated_at: updatedAt } as unknown as T);
+        results.push({ ...item, id, created_at: includeCreatedAt ? createdAtValue : undefined, updated_at: includeUpdatedAt ? updatedAtValue : undefined } as unknown as T);
       });
     });
     
@@ -1361,14 +1406,16 @@ export class SQLiteProvider implements DatabaseProviderInterface {
   private async runUpdate<T = any>(conn: DatabaseConnection, table: string, id: string, data: Record<string, any>): Promise<T> {
     const now = new Date().toISOString();
     const mapped = this.mapForWrite(table, data);
-    mapped.updated_at = now;
+    if (this.getColumns(table)?.columns.has('updated_at') ?? true) {
+      mapped.updated_at = now;
+    }
     const fields = Object.keys(mapped);
     const values = [...Object.values(mapped), id];
-    
+
     const setClause = fields.map(f => `${f} = ?`).join(', ');
     const sql = `UPDATE ${table} SET ${setClause} WHERE id = ?`;
     await conn.execute(sql, values);
-    
+
     return this.runFindById<T>(conn, table, id) as Promise<T>;
   }
 
@@ -1377,7 +1424,9 @@ export class SQLiteProvider implements DatabaseProviderInterface {
     
     const now = new Date().toISOString();
     const mapped = this.mapForWrite(table, data);
-    mapped.updated_at = now;
+    if (this.getColumns(table)?.columns.has('updated_at') ?? true) {
+      mapped.updated_at = now;
+    }
     const fields = Object.keys(mapped);
     const setClause = fields.map(f => `${f} = ?`).join(', ');
     const { sql: whereSql, params: whereParams } = this.buildWhereClause(filters, table);

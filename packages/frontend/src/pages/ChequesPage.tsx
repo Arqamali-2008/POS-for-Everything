@@ -62,7 +62,7 @@ export function ChequesPage() {
   });
 
   const cheques = data?.data ?? [];
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString('en-CA');
   const isOverdue = (cheque: any) =>
     ['Pending', 'Deposited'].includes(cheque.status) && cheque.dueDate && String(cheque.dueDate).slice(0, 10) < today;
 

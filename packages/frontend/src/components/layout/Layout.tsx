@@ -167,6 +167,10 @@ export function Layout() {
             </button>
           </div>
 
+          <p className="text-[10px] text-center text-secondary-400 dark:text-secondary-500 mt-3 select-none">
+            Designed and Developed By AMi
+          </p>
+
           <div className="flex items-center gap-3">
             <Avatar 
               name={user?.fullName || 'User'} 

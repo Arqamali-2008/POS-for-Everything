@@ -62,14 +62,14 @@ const productUpdateSchema = productCreateSchema.partial();
 
 const queryParamsSchema = z.object({
   page: z.coerce.number().positive().default(1),
-  limit: z.coerce.number().positive().max(500).default(50),
+  limit: z.coerce.number().positive().max(2000).default(50),
   sortBy: z.string().optional(),
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
   search: z.string().optional(),
   categoryId: z.string().optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
   status: z.enum(['active', 'inactive', 'discontinued']).optional(),
-  lowStock: z.coerce.boolean().optional(),
+  lowStock: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
 });
 
 const idParamSchema = z.object({

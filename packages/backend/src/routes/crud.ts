@@ -16,20 +16,25 @@ export interface CrudOptions {
   table: string;
   /** Restrict write operations to managers/admins. */
   managerOnly?: boolean;
+  /** Columns searched by ?search= (must exist on the table). */
+  searchFields?: string[];
   /** Extra defaults applied when creating a record. */
   defaults?: Record<string, unknown>;
 }
 
+/** Fields a client may never set directly. */
+const PROTECTED_FIELDS = new Set(['id', 'deleted', 'deleted_at', 'synced', 'synced_at', 'sync_version']);
+
 const listQuerySchema = z.object({
   page: z.coerce.number().positive().default(1),
-  limit: z.coerce.number().positive().max(500).default(50),
+  limit: z.coerce.number().positive().max(2000).default(50),
   sortBy: z.string().optional(),
   sortOrder: z.enum(['asc', 'desc']).default('asc'),
   search: z.string().optional(),
   status: z.string().optional(),
   category: z.string().optional(),
   categoryId: z.string().optional(),
-  isActive: z.coerce.boolean().optional(),
+  isActive: z.enum(['true', 'false']).transform(v => v === 'true').optional(),
 });
 
 const idParamSchema = z.object({ id: z.string().min(1) });
@@ -45,6 +50,13 @@ export function createCrudRouter(options: CrudOptions): Router {
 
   const writeMiddleware = options.managerOnly ? requireManagerOrAdmin : (_req: Request, _res: Response, next: NextFunction) => next();
 
+  /** Drop client-supplied system fields so they can never be mass-assigned. */
+  function sanitizePayload(body: unknown): Record<string, unknown> {
+    const payload = { ...(body as Record<string, unknown>) };
+    for (const field of PROTECTED_FIELDS) delete payload[field];
+    return payload;
+  }
+
   router.get('/', authenticateToken, validateQuery(listQuerySchema), async (req: Request, res: Response) => {
     try {
       const { page, limit, sortBy, sortOrder, search, status, category, categoryId, isActive } = req.query as any;
@@ -54,9 +66,9 @@ export function createCrudRouter(options: CrudOptions): Router {
       if (category) filters.push({ field: 'category', operator: 'eq', value: category });
       if (categoryId) filters.push({ field: 'category_id', operator: 'eq', value: categoryId });
       if (isActive !== undefined) filters.push({ field: 'is_active', operator: 'eq', value: isActive });
-      if (search) {
-        filters.push({ field: 'name', operator: 'like', value: search });
-      }
+  if (search && (options.searchFields?.length ?? 0) > 0) {
+    filters.push({ field: options.searchFields![0], operator: 'like', value: search });
+  }
 
       const sorts = sortBy ? [{ field: sortBy, order: sortOrder }] : undefined;
       const offset = (page - 1) * limit;
@@ -100,7 +112,7 @@ export function createCrudRouter(options: CrudOptions): Router {
 
   router.post('/', authenticateToken, writeMiddleware, async (req: Request, res: Response) => {
     try {
-      const payload = { ...(options.defaults ?? {}), ...req.body };
+      const payload = { ...(options.defaults ?? {}), ...sanitizePayload(req.body) };
       const record = await db.create(options.table, payload as any);
       res.status(201).json({ success: true, data: record });
     } catch (error) {
@@ -115,7 +127,10 @@ export function createCrudRouter(options: CrudOptions): Router {
 
   router.put('/:id', authenticateToken, writeMiddleware, validateParams(idParamSchema), async (req: Request, res: Response) => {
     try {
-      const record = await db.update(options.table, req.params.id, req.body as any);
+      const payload = sanitizePayload(req.body);
+      // Always reflect a fresh modification timestamp on manual updates.
+      payload.updatedAt = new Date().toISOString();
+      const record = await db.update(options.table, req.params.id, payload as any);
       res.json({ success: true, data: record });
     } catch (error) {
       logger.error(`Failed to update ${options.table}`, {}, error instanceof Error ? error : undefined);

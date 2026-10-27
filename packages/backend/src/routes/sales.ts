@@ -86,13 +86,13 @@ const saleUpdateSchema = saleCreateSchema.partial().omit({ items: true });
 
 const queryParamsSchema = z.object({
   page: z.coerce.number().positive().default(1),
-  limit: z.coerce.number().positive().max(500).default(50),
+  limit: z.coerce.number().positive().max(2000).default(50),
   sortBy: z.string().optional(),
   sortOrder: z.enum(['asc', 'desc']).default('desc'),
   search: z.string().optional(),
   customerId: z.string().optional(),
   cashierId: z.string().optional(),
-  status: z.enum(['Completed', 'Pending', 'Cancelled', 'Refunded', 'Partial', 'Held']).optional(),
+  status: z.enum(['Completed', 'Pending', 'Cancelled', 'Refunded', 'Partial', 'Partially Refunded', 'Held']).optional(),
   paymentType: z.enum(['Cash', 'Card', 'UPI', 'Bank Transfer', 'Cheque', 'Credit', 'Mixed', 'Other']).optional(),
   dateFrom: z.string().date().optional(),
   dateTo: z.string().date().optional(),
@@ -103,6 +103,23 @@ const queryParamsSchema = z.object({
 const idParamSchema = z.object({
   id: z.string().min(1),
 });
+
+const refundSchema = z.object({
+  items: z.array(z.object({
+    saleItemId: z.string().min(1),
+    quantity: z.number().int().positive(),
+  })).optional(),
+  amount: z.number().positive().optional(),
+  restock: z.boolean().optional(),
+  reason: z.string().max(500).optional(),
+  paymentType: z.string().optional(),
+  amountPaid: z.number().optional(),
+  note: z.string().max(1000).optional(),
+}).strict();
+
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
 
 // ============================================================================
 // Routes
@@ -123,7 +140,7 @@ router.get('/', authenticateToken, validateQuery(queryParamsSchema), async (req:
     if (status) filters.push({ field: 'status', operator: 'eq', value: status });
     if (paymentType) filters.push({ field: 'payment_type', operator: 'eq', value: paymentType });
     if (dateFrom) filters.push({ field: 'created_at', operator: 'gte', value: dateFrom });
-    if (dateTo) filters.push({ field: 'created_at', operator: 'lte', value: dateTo });
+    if (dateTo) filters.push({ field: 'created_at', operator: 'lt', value: `${dateTo}T23:59:59.999Z` });
     if (minAmount) filters.push({ field: 'grand_total', operator: 'gte', value: minAmount });
     if (maxAmount) filters.push({ field: 'grand_total', operator: 'lte', value: maxAmount });
     
@@ -218,7 +235,53 @@ router.post('/', authenticateToken, validateBody(saleCreateSchema), async (req: 
     const saleData = req.body;
     const { items, ...saleFields } = saleData;
     const now = new Date().toISOString();
-    
+
+    // sales.cashier_id is a FOREIGN KEY to employees(id). The built-in admin
+    // and any auth user may not have an employees row — auto-link by name or
+    // provision a stub employee so sales never fail on FK violations.
+    const existingCashier = await db!.findFirst('employees', {
+      filters: [{ field: 'id', operator: 'eq', value: saleFields.cashierId }],
+    });
+    if (!existingCashier) {
+      const byName = await db!.findFirst('employees', {
+        filters: [{ field: 'name', operator: 'eq', value: saleFields.cashierName }],
+      });
+      if (byName) {
+        saleFields.cashierId = byName.id;
+        saleFields.cashierCode = saleFields.cashierCode || byName.salesCode;
+      } else {
+        const providedCode = saleFields.cashierCode || `AUTO-${Date.now().toString(36).toUpperCase()}`;
+        try {
+          await db!.create('employees', {
+            id: saleFields.cashierId,
+            salesCode: providedCode,
+            name: saleFields.cashierName || req.user?.email || 'Cashier',
+            role: 'cashier',
+            email: req.user?.email || null,
+            isActive: true,
+          } as any);
+          saleFields.cashierCode = providedCode;
+        } catch {
+          // Unique/insert races fall back to the name-linked row above
+          const retry = await db!.findFirst('employees', {
+            filters: [{ field: 'name', operator: 'eq', value: saleFields.cashierName }],
+          });
+          if (retry) saleFields.cashierId = retry.id;
+        }
+      }
+    }
+
+    // customers.id is also an FK: a stale/unknown customer id must not fail
+    // the sale — fall back to a walk-in customer instead.
+    if (saleFields.customerId) {
+      const customer = await db!.findFirst('customers', {
+        filters: [{ field: 'id', operator: 'eq', value: saleFields.customerId }],
+      });
+      if (!customer) {
+        delete saleFields.customerId;
+      }
+    }
+
     // Generate invoice number if not provided
     const invoiceNo = saleFields.invoiceNo || `INV-${Date.now().toString().slice(-6)}`;
     
@@ -268,7 +331,8 @@ router.post('/', authenticateToken, validateBody(saleCreateSchema), async (req: 
         }
         
         const stockBefore = product.stock;
-        const stockAfter = stockBefore - item.quantity + (item.freeQuantity || 0);
+        // Free units also leave the warehouse: sell X(+F free) => stock -= X + F
+        const stockAfter = stockBefore - item.quantity - (item.freeQuantity || 0);
         
         // Create sale item
         const saleItem = await tx.create('sale_items', {
@@ -432,7 +496,7 @@ router.post('/:id/cancel', authenticateToken, validateParams(idParamSchema), asy
       for (const item of items) {
         const product = await tx.findById('products', item.productId);
         if (product && product.trackInventory) {
-          const newStock = product.stock + item.quantity - (item.freeQuantity || 0);
+          const newStock = product.stock + item.quantity + (item.freeQuantity || 0);
           
           await tx.update('products', product.id, {
             stock: newStock,
@@ -497,97 +561,162 @@ router.post('/:id/refund', authenticateToken, validateParams(idParamSchema), asy
     if (sale.status === 'Refunded') {
       return res.status(400).json({
         success: false,
-        error: 'Sale is already refunded',
+        error: 'Sale is already fully refunded',
         code: 'INVALID_STATUS',
       });
     }
-    
-    const { items: refundItems, paymentType, amountPaid, note } = req.body;
-    
-    if (!refundItems || !Array.isArray(refundItems) || refundItems.length === 0) {
+
+    if (!['Completed', 'Partial', 'Partially Refunded'].includes(sale.status)) {
       return res.status(400).json({
         success: false,
-        error: 'Refund items required',
-        code: 'INVALID_INPUT',
+        error: `Sale with status "${sale.status}" cannot be refunded (only completed sales can)`,
+        code: 'INVALID_STATUS',
       });
     }
-    
+
+    let refundBody: { items?: { saleItemId: string; quantity: number }[]; amount?: number; restock?: boolean; reason?: string; paymentType?: string; note?: string };
+    try {
+      refundBody = refundSchema.parse(req.body ?? {});
+    } catch (validation) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid refund payload',
+        code: 'VALIDATION_ERROR',
+        details: validation instanceof z.ZodError ? validation.flatten().fieldErrors : undefined,
+      });
+    }
+
     const originalItems = await db!.findMany('sale_items', {
       filters: [{ field: 'sale_id', operator: 'eq', value: sale.id }],
     });
-    
-    // Validate refund items against original sale
-    for (const refundItem of refundItems) {
-      const originalItem = originalItems.find(i => i.id === refundItem.saleItemId);
-      if (!originalItem) {
+
+    const remainingOf = (item: any): number =>
+      Math.max(0, (Number(item.quantity) || 0) + (Number(item.freeQuantity) || 0) - (Number(item.returnedQuantity) || 0));
+
+    const unitPriceOf = (item: any): number => {
+      const unit = Number(item.unitPrice);
+      if (Number.isFinite(unit) && unit > 0) return unit;
+      const qty = Number(item.quantity) || 0;
+      return qty > 0 ? Number(item.lineTotal) / qty : 0;
+    };
+
+    // Decide what is being returned. The client may send an exact item
+    // allocation, or (like the UI) just an `amount` — in that case items are
+    // allocated greedily from the sale's remaining quantity until the amount
+    // is covered so the books stay consistent with the items.
+    let refundItems: { saleItemId: string; quantity: number }[] = [];
+    let refundedTotal = 0;
+
+    if (refundBody.items && refundBody.items.length > 0) {
+      const totals = new Map<string, number>();
+      for (const item of refundBody.items) totals.set(item.saleItemId, (totals.get(item.saleItemId) ?? 0) + item.quantity);
+      for (const [saleItemId, quantity] of totals) {
+        const originalItem = originalItems.find(i => i.id === saleItemId);
+        if (!originalItem) {
+          return res.status(400).json({
+            success: false,
+            error: `Invalid refund item: ${saleItemId}`,
+            code: 'INVALID_REFUND_ITEM',
+          });
+        }
+        if (quantity > remainingOf(originalItem)) {
+          return res.status(400).json({
+            success: false,
+            error: `Cannot refund more than sold for ${originalItem.name}`,
+            code: 'INVALID_REFUND_QUANTITY',
+          });
+        }
+        refundItems.push({ saleItemId, quantity });
+        refundedTotal = round2(refundedTotal + quantity * unitPriceOf(originalItem));
+      }
+    } else if (refundBody.amount) {
+      let budget = refundBody.amount;
+      for (const originalItem of originalItems) {
+        if (budget <= 0.004) break;
+        const remaining = remainingOf(originalItem);
+        if (remaining <= 0) continue;
+        const unit = unitPriceOf(originalItem);
+        if (unit <= 0) continue;
+        let quantity = Math.floor(budget / unit + 1e-9);
+        if (quantity <= 0) break;
+        quantity = Math.min(quantity, remaining);
+        const lineAmount = round2(quantity * unit);
+        refundItems.push({ saleItemId: originalItem.id, quantity });
+        refundedTotal = round2(refundedTotal + lineAmount);
+        budget = round2(budget - lineAmount);
+      }
+      if (refundItems.length === 0) {
         return res.status(400).json({
           success: false,
-          error: `Invalid refund item: ${refundItem.saleItemId}`,
-          code: 'INVALID_REFUND_ITEM',
+          error: 'Refund amount too small — nothing left to refund on this sale',
+          code: 'INVALID_REFUND_AMOUNT',
         });
       }
-      
-      if (refundItem.quantity > originalItem.quantity - originalItem.returnedQuantity) {
-        return res.status(400).json({
-          success: false,
-          error: `Cannot refund more than sold for ${originalItem.name}`,
-          code: 'INVALID_REFUND_QUANTITY',
-        });
-      }
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'Refund items or amount required',
+        code: 'INVALID_INPUT',
+      });
     }
-    
+
+    const restock = refundBody.restock !== false;
+    const totalRemainingBefore = originalItems.reduce((sum: number, item: any) => sum + remainingOf(item), 0);
+
     // Process refund
     await db!.transaction(async (tx) => {
-      // Update sale status
+      for (const refundItem of refundItems) {
+        const originalItem = originalItems.find(i => i.id === refundItem.saleItemId)!;
+
+        // Mark the units as returned even when they are not restocked
+        await tx.update('sale_items', originalItem.id, {
+          returnedQuantity: Number(originalItem.returnedQuantity || 0) + refundItem.quantity,
+          synced: false,
+          syncVersion: (originalItem.syncVersion || 0) + 1,
+        });
+
+        if (restock) {
+          const product = await tx.findById('products', originalItem.productId);
+          if (product && product.trackInventory) {
+            const newStock = product.stock + refundItem.quantity;
+
+            await tx.update('products', product.id, {
+              stock: newStock,
+              synced: false,
+              syncVersion: (product.syncVersion || 0) + 1,
+            });
+
+            await tx.create('stock_movements', {
+              productId: product.id,
+              productName: product.name,
+              itemCode: product.itemCode,
+              type: 'return',
+              quantity: refundItem.quantity,
+              previousStock: product.stock,
+              newStock,
+              referenceId: sale.id,
+              referenceType: 'sale',
+              referenceNumber: sale.invoiceNo,
+              reason: refundBody.reason || `Refund for ${sale.invoiceNo}`,
+              performedBy: req.user!.userId,
+              performedByName: req.user!.email,
+              branchId: sale.branchId,
+              createdAt: new Date().toISOString(),
+            });
+          }
+        }
+      }
+
+      const totalRemainingAfter = totalRemainingBefore - refundItems.reduce((sum, item) => sum + item.quantity, 0);
       await tx.update('sales', sale.id, {
-        status: 'Refunded',
+        status: totalRemainingAfter <= 0 ? 'Refunded' : 'Partially Refunded',
+        refundAmount: round2(Number(sale.refundAmount || 0) + refundedTotal),
         synced: false,
         syncVersion: (sale.syncVersion || 0) + 1,
       });
-      
-      // Process each refund item
-      for (const refundItem of refundItems) {
-        const originalItem = originalItems.find(i => i.id === refundItem.saleItemId)!;
-        
-        // Update sale item returned quantity
-        await tx.update('sale_items', originalItem.id, {
-          returnedQuantity: originalItem.returnedQuantity + refundItem.quantity,
-        });
-        
-        // Restore inventory
-        const product = await tx.findById('products', originalItem.productId);
-        if (product && product.trackInventory) {
-          const newStock = product.stock + refundItem.quantity;
-          
-          await tx.update('products', product.id, {
-            stock: newStock,
-            synced: false,
-            syncVersion: (product.syncVersion || 0) + 1,
-          });
-          
-          // Record stock movement
-          await tx.create('stock_movements', {
-            productId: product.id,
-            productName: product.name,
-            itemCode: product.itemCode,
-            type: 'return',
-            quantity: refundItem.quantity,
-            previousStock: product.stock,
-            newStock,
-            referenceId: sale.id,
-            referenceType: 'sale',
-            referenceNumber: sale.invoiceNo,
-            reason: `Refund for ${sale.invoiceNo}`,
-            performedBy: req.user!.userId,
-            performedByName: req.user!.email,
-            branchId: sale.branchId,
-            createdAt: new Date().toISOString(),
-          });
-        }
-      }
     });
-    
-    logger.info('Sale refunded', { id: sale.id, invoiceNo: sale.invoiceNo });
+
+    logger.info('Sale refunded', { id: sale.id, invoiceNo: sale.invoiceNo, refundedTotal });
     
     res.json({
       success: true,

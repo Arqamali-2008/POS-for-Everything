@@ -57,7 +57,7 @@ export function LeaderboardPage() {
         dateFrom: effective.from || undefined,
         dateTo: effective.to || undefined,
         limit: 2000,
-        sortBy: 'date',
+        sortBy: 'createdAt',
         sortOrder: 'desc' as const,
       }),
   });
@@ -73,7 +73,7 @@ export function LeaderboardPage() {
   });
 
   const sales = (salesData?.data ?? []).filter(
-    (sale: any) => !['Cancelled', 'Refunded', 'Held', 'Unpaid'].includes(String(sale.status)),
+    (sale: any) => !['Cancelled', 'Refunded', 'Held', 'Unpaid', 'Pending', 'Partial', 'Partially Refunded'].includes(String(sale.status)),
   );
   const products = productsData?.data ?? [];
   const employees = employeesData?.data ?? [];
@@ -84,7 +84,7 @@ export function LeaderboardPage() {
       for (const sale of sales) {
         const code = sale.cashierCode || sale.cashierName || 'Unknown';
         const existing = map.get(code) ?? { id: code, label: code, sales: 0, profit: 0, count: 0 };
-        existing.sales += Number(sale.total || 0);
+        existing.sales += Math.max(0, Number(sale.grandTotal || 0) - Number(sale.refundAmount || 0));
         existing.profit += (sale.items ?? []).reduce((sum: number, item: any) => sum + Number(item.profit || 0), 0);
         existing.count += 1;
         map.set(code, existing);

@@ -199,7 +199,7 @@ export function SalesPage() {
     { key: 'createdAt', header: 'Date & Time', accessor: 'createdAt', width: '160px', render: (v) => formatDateTime(v) },
     { key: 'customerName', header: 'Customer', accessor: 'customerName', width: '160px' },
     { key: 'cashierName', header: 'Cashier', accessor: 'cashierName', width: '120px' },
-    { key: 'itemCount', header: 'Items', accessor: 'itemCount', width: '70px', align: 'center' },
+    { key: 'itemCount', header: 'Items', accessor: 'itemCount', width: '70px', align: 'center', render: (v: any, row: any) => row.itemCount ?? row.items?.length ?? 0 },
     { key: 'paymentType', header: 'Payment', accessor: 'paymentType', width: '110px', render: (v) => <StatusBadge status={v} size="sm" /> },
     { key: 'grandTotal', header: 'Total', accessor: 'grandTotal', width: '120px', align: 'right', render: (v) => formatCurrency(v) },
     { key: 'status', header: 'Status', accessor: 'status', width: '140px', align: 'center', render: (v) => <Badge variant={statusVariant(v)} size="sm">{v}</Badge> },
@@ -218,18 +218,14 @@ export function SalesPage() {
     },
   ];
 
-  const pageRevenue = sales
-    .filter((sale: any) => sale.status !== 'Cancelled')
-    .reduce((sum: number, sale: any) => sum + Number(sale.grandTotal || 0), 0);
-  const cashRevenue = sales
-    .filter((sale: any) => sale.status !== 'Cancelled' && sale.paymentType === 'Cash')
-    .reduce((sum: number, sale: any) => sum + Number(sale.grandTotal || 0), 0);
-  const cardRevenue = sales
-    .filter((sale: any) => sale.status !== 'Cancelled' && ['Card', 'UPI'].includes(sale.paymentType))
-    .reduce((sum: number, sale: any) => sum + Number(sale.grandTotal || 0), 0);
-  const creditRevenue = sales
-    .filter((sale: any) => sale.status !== 'Cancelled' && sale.paymentType === 'Credit')
-    .reduce((sum: number, sale: any) => sum + Number(sale.grandTotal || 0), 0);
+  const revenueSales = sales.filter(
+    (sale: any) => !['Cancelled', 'Refunded', 'Held', 'Unpaid', 'Pending', 'Partial', 'Partially Refunded'].includes(String(sale.status)),
+  );
+  const netAmount = (sale: any) => Math.max(0, Number(sale.grandTotal || 0) - Number(sale.refundAmount || 0));
+  const pageRevenue = revenueSales.reduce((sum: number, sale: any) => sum + netAmount(sale), 0);
+  const cashRevenue = revenueSales.filter((sale: any) => sale.paymentType === 'Cash').reduce((sum: number, sale: any) => sum + netAmount(sale), 0);
+  const cardRevenue = revenueSales.filter((sale: any) => ['Card', 'UPI'].includes(sale.paymentType)).reduce((sum: number, sale: any) => sum + netAmount(sale), 0);
+  const creditRevenue = revenueSales.filter((sale: any) => sale.paymentType === 'Credit').reduce((sum: number, sale: any) => sum + netAmount(sale), 0);
 
   return (
     <div className="space-y-6">

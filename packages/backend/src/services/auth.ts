@@ -182,7 +182,9 @@ class AuthService {
       options: {
         data: {
           full_name: data.fullName,
-          role: data.role || 'cashier',
+          // Open registration is self-service: new users can never pick a
+          // privileged role. Managers/admins are provisioned by admins.
+          role: 'cashier',
         },
       },
     });

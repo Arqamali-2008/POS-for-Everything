@@ -222,10 +222,10 @@ export function SettingsPage() {
     },
   });
 
-  const submit = async (data: SettingsForm) => {
+  const submit = (data: SettingsForm) => {
     setIsSaving(true);
     applyTheme(data.theme);
-    await saveMutation.mutateAsync(data);
+    saveMutation.mutate(data, { onSettled: () => setIsSaving(false) });
   };
 
   const savePaymentMethods = async () => {

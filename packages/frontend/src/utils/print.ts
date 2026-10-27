@@ -43,6 +43,7 @@ function openPrintWindow(title: string, body: string): void {
     td.amount, th.amount { text-align: right; width: 68px; }
     .total { font-size: 15px; font-weight: bold; }
     .footer { margin-top: 10px; text-align: center; font-size: 11px; }
+    .dev-credit { margin-top: 6px; text-align: center; font-size: 10px; color: #777; }
     @page { margin: 0; }
   </style>
 </head>
@@ -92,7 +93,7 @@ export function printReceipt(sale: any, settings: PrintSettings = {}): void {
     ${Number(sale.taxAmount || 0) ? `<div class="row"><span>Tax</span><span>${formatCurrency(Number(sale.taxAmount))}</span></div>` : ''}
     <div class="row total"><span>Total</span><span>${formatCurrency(Number(sale.grandTotal || 0))}</span></div>
     <div class="row"><span>Paid (${escapeHtml(sale.paymentType || 'Cash')})</span><span>${formatCurrency(Number(sale.amountPaid || 0))}</span></div>
-    <div class="row"><span>Change</span><span>${formatCurrency(Number(sale.changeDue || 0))}</span></div>
+    ${(Number(sale.changeDue || 0) > 0 && sale.paymentType !== 'Credit') ? `<div class="row"><span>Change</span><span>${formatCurrency(Number(sale.changeDue))}</span></div>` : ''}
     ${Number(sale.balanceDue || 0) ? `<div class="row"><span>Balance due</span><span>${formatCurrency(Number(sale.balanceDue))}</span></div>` : ''}
     ${sale.note ? `<div class="divider"></div><div class="muted">Note: ${escapeHtml(sale.note)}</div>` : ''}
     <div class="footer">
@@ -101,6 +102,7 @@ export function printReceipt(sale: any, settings: PrintSettings = {}): void {
       ${escapeHtml(settings.receiptFooter || 'Thank you for your business!')}
       <br/><br/>
       ${escapeHtml(settings.shopEmail || '')}
+      <div class="dev-credit">Designed and Developed By AMi</div>
     </div>
   `;
 
@@ -136,6 +138,11 @@ export function printPurchaseOrder(purchase: any, settings: PrintSettings = {}):
     <div class="divider"></div>
     <div class="row total"><span>Total</span><span>${formatCurrency(Number(purchase.grandTotal || 0))}</span></div>
     ${purchase.note ? `<div class="divider"></div><div class="muted">Note: ${escapeHtml(purchase.note)}</div>` : ''}
+    <div class="divider"></div>
+    <div class="footer">
+      ${escapeHtml(settings.receiptFooter || 'Thank you for your business!')}
+      <div class="dev-credit">Designed and Developed By AMi</div>
+    </div>
   `;
 
   openPrintWindow(`PO ${purchase.poNumber}`, body);

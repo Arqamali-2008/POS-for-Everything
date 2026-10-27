@@ -171,9 +171,11 @@ export function CustomersPage() {
     0,
   );
   const withDebt = customers.filter((customer: any) => Number(customer.currentBalance || 0) > 0).length;
-  const thisMonth = customers.filter(
-    (customer: any) => new Date(customer.createdAt).getMonth() === new Date().getMonth(),
-  ).length;
+  const thisMonth = customers.filter((customer: any) => {
+    const created = new Date(customer.createdAt);
+    const now = new Date();
+    return created.getFullYear() === now.getFullYear() && created.getMonth() === now.getMonth();
+  }).length;
 
   return (
     <div className="space-y-6">

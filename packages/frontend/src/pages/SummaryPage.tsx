@@ -76,15 +76,15 @@ export function SummaryPage() {
 
   const { data: salesData } = useQuery({
     queryKey: ['summary-sales'],
-    queryFn: () => apiClient.sales.list({ limit: 2000, sortBy: 'date', sortOrder: 'desc' as const }),
+    queryFn: () => apiClient.sales.list({ limit: 2000, sortBy: 'createdAt', sortOrder: 'desc' as const }),
   });
 
   const salesByDate = useMemo(() => {
     const map = new Map<string, number>();
     for (const sale of salesData?.data ?? []) {
-      if (['Cancelled', 'Refunded', 'Unpaid'].includes(String(sale.status))) continue;
+      if (['Cancelled', 'Refunded', 'Unpaid', 'Held', 'Pending', 'Partial', 'Partially Refunded'].includes(String(sale.status))) continue;
       const key = new Date(sale.date || sale.createdAt).toLocaleDateString('en-CA');
-      map.set(key, (map.get(key) ?? 0) + Number(sale.total || 0));
+      map.set(key, (map.get(key) ?? 0) + Math.max(0, Number(sale.grandTotal || 0) - Number(sale.refundAmount || 0)));
     }
     return map;
   }, [salesData]);
